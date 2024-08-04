@@ -117,15 +117,24 @@ def browse_output_folder():
     folder_selected = filedialog.askdirectory()
     output_folder_var.set(folder_selected)
 
+def browse_input_file():
+    file_selected = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
+    input_file_var.set(file_selected)
+
 def process_pdfs():
     input_folder = input_folder_var.get()
     output_folder = output_folder_var.get()
+    input_file = input_file_var.get()
     extract_text = text_var.get()
     extract_images = image_var.get()
     divide_chapters = chapter_var.get()
 
-    if not input_folder or not output_folder:
-        messagebox.showwarning("Input Error", "Please select both folders.")
+    if not input_folder and not input_file:
+        messagebox.showwarning("Input Error", "Please select an input folder or file.")
+        return
+
+    if not output_folder:
+        messagebox.showwarning("Output Error", "Please select an output folder.")
         return
 
     if extract_text:
@@ -147,20 +156,24 @@ def process_pdfs():
         messagebox.showwarning("Selection Error", "Please select at least one option to extract.")
         return
 
-    for filename in os.listdir(input_folder):
-        if filename.lower().endswith('.pdf'):
-            pdf_path = os.path.join(input_folder, filename)
-            pdf_output_folder = os.path.join(output_folder, os.path.splitext(filename)[0])
-            os.makedirs(pdf_output_folder, exist_ok=True)
-            
-            if extract_images:
-                extract_images_from_pdf(pdf_path, pdf_output_folder)
-            
-            if extract_text:
-                extract_text_from_pdf(pdf_path, keyword, pdf_output_folder, num_sentences, direction)
-            
-            if divide_chapters:
-                divide_pdf_into_chapters(pdf_path, pdf_output_folder)
+    pdf_files = []
+    if input_folder:
+        pdf_files = [os.path.join(input_folder, f) for f in os.listdir(input_folder) if f.lower().endswith('.pdf')]
+    if input_file:
+        pdf_files.append(input_file)
+    
+    for pdf_path in pdf_files:
+        pdf_output_folder = os.path.join(output_folder, os.path.splitext(os.path.basename(pdf_path))[0])
+        os.makedirs(pdf_output_folder, exist_ok=True)
+        
+        if extract_images:
+            extract_images_from_pdf(pdf_path, pdf_output_folder)
+        
+        if extract_text:
+            extract_text_from_pdf(pdf_path, keyword, pdf_output_folder, num_sentences, direction)
+        
+        if divide_chapters:
+            divide_pdf_into_chapters(pdf_path, pdf_output_folder)
     
     messagebox.showinfo("Success", "Processing completed.")
 
@@ -170,6 +183,7 @@ app.title("PDF Processing Tool")
 
 input_folder_var = tk.StringVar()
 output_folder_var = tk.StringVar()
+input_file_var = tk.StringVar()
 text_var = tk.BooleanVar()
 image_var = tk.BooleanVar()
 chapter_var = tk.BooleanVar()
@@ -177,7 +191,11 @@ direction_var = tk.StringVar(value="Forward")
 
 tk.Label(app, text="Input Folder:").pack(pady=5)
 tk.Entry(app, textvariable=input_folder_var, width=50).pack(pady=5)
-tk.Button(app, text="Browse", command=browse_input_folder).pack(pady=5)
+tk.Button(app, text="Browse Folder", command=browse_input_folder).pack(pady=5)
+
+tk.Label(app, text="Or Input File:").pack(pady=5)
+tk.Entry(app, textvariable=input_file_var, width=50).pack(pady=5)
+tk.Button(app, text="Browse File", command=browse_input_file).pack(pady=5)
 
 tk.Label(app, text="Output Folder:").pack(pady=5)
 tk.Entry(app, textvariable=output_folder_var, width=50).pack(pady=5)
