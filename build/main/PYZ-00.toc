@@ -1,4 +1,4 @@
-('C:\\Users\\PC\\Desktop\\PDFSplitter\\build\\main\\PYZ-00.pyz',
+('C:\\PythonDev\\PDFProcessor\\build\\main\\PYZ-00.pyz',
  [('_compat_pickle', 'C:\\Python312\\Lib\\_compat_pickle.py', 'PYMODULE'),
   ('_compression', 'C:\\Python312\\Lib\\_compression.py', 'PYMODULE'),
   ('_py_abc', 'C:\\Python312\\Lib\\_py_abc.py', 'PYMODULE'),
@@ -271,6 +271,7 @@
   ('tkinter.simpledialog',
    'C:\\Python312\\Lib\\tkinter\\simpledialog.py',
    'PYMODULE'),
+  ('tkinter.ttk', 'C:\\Python312\\Lib\\tkinter\\ttk.py', 'PYMODULE'),
   ('token', 'C:\\Python312\\Lib\\token.py', 'PYMODULE'),
   ('tokenize', 'C:\\Python312\\Lib\\tokenize.py', 'PYMODULE'),
   ('tracemalloc', 'C:\\Python312\\Lib\\tracemalloc.py', 'PYMODULE'),

@@ -1,7 +1,8 @@
 import fitz  # PyMuPDF
 import os
+import re
 import tkinter as tk
-from tkinter import filedialog, simpledialog, messagebox
+from tkinter import filedialog, simpledialog, messagebox, ttk
 
 def extract_images_from_pdf(pdf_path, output_folder):
     pdf_document = fitz.open(pdf_path)
@@ -20,16 +21,32 @@ def extract_images_from_pdf(pdf_path, output_folder):
                 image_file.write(image_bytes)
     pdf_document.close()
 
-def extract_text_from_pdf(pdf_path, keyword, output_folder):
+def split_sentences(text):
+    sentence_endings = re.compile(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s')
+    return sentence_endings.split(text)
+
+def extract_text_from_pdf(pdf_path, keyword, output_folder, num_sentences, direction):
     pdf_document = fitz.open(pdf_path)
     extracted_text = []
+    sentences = []
+    
     for page_number in range(len(pdf_document)):
         page = pdf_document.load_page(page_number)
         text = page.get_text()
-        if keyword.lower() in text.lower():
-            extracted_text.append(f"Page {page_number+1}:\n{text}")
-    pdf_document.close()
+        sentences += split_sentences(text)
     
+    keyword_indices = [i for i, s in enumerate(sentences) if keyword.lower() in s.lower()]
+
+    for index in keyword_indices:
+        if direction == "Forward":
+            selected_sentences = sentences[index:index + num_sentences]
+        elif direction == "Backward":
+            selected_sentences = sentences[max(0, index - num_sentences + 1):index + 1]
+
+        extracted_text.append(f"Keyword found in Sentence {index+1}:\n{' '.join(selected_sentences)}")
+
+    pdf_document.close()
+
     if extracted_text:
         text_filename = os.path.join(output_folder, "extracted_text.txt")
         with open(text_filename, "w", encoding="utf-8") as text_file:
@@ -116,6 +133,15 @@ def process_pdfs():
         if not keyword:
             messagebox.showwarning("Keyword Error", "Please enter a keyword for text extraction.")
             return
+        try:
+            num_sentences = simpledialog.askinteger("Number of Sentences", "Enter the number of sentences to extract:")
+        except ValueError:
+            messagebox.showwarning("Sentence Number Error", "Please enter a valid number of sentences.")
+            return
+        direction = direction_var.get()
+        if direction not in ["Forward", "Backward"]:
+            messagebox.showwarning("Direction Error", "Please select a valid direction from the dropdown.")
+            return
 
     if not extract_text and not extract_images and not divide_chapters:
         messagebox.showwarning("Selection Error", "Please select at least one option to extract.")
@@ -131,7 +157,7 @@ def process_pdfs():
                 extract_images_from_pdf(pdf_path, pdf_output_folder)
             
             if extract_text:
-                extract_text_from_pdf(pdf_path, keyword, pdf_output_folder)
+                extract_text_from_pdf(pdf_path, keyword, pdf_output_folder, num_sentences, direction)
             
             if divide_chapters:
                 divide_pdf_into_chapters(pdf_path, pdf_output_folder)
@@ -147,6 +173,7 @@ output_folder_var = tk.StringVar()
 text_var = tk.BooleanVar()
 image_var = tk.BooleanVar()
 chapter_var = tk.BooleanVar()
+direction_var = tk.StringVar(value="Forward")
 
 tk.Label(app, text="Input Folder:").pack(pady=5)
 tk.Entry(app, textvariable=input_folder_var, width=50).pack(pady=5)
@@ -159,6 +186,10 @@ tk.Button(app, text="Browse", command=browse_output_folder).pack(pady=5)
 tk.Checkbutton(app, text="Extract Text", variable=text_var).pack(pady=5)
 tk.Checkbutton(app, text="Extract Images", variable=image_var).pack(pady=5)
 tk.Checkbutton(app, text="Divide into Chapters", variable=chapter_var).pack(pady=5)
+
+tk.Label(app, text="Extract Text Direction:").pack(pady=5)
+direction_dropdown = ttk.Combobox(app, textvariable=direction_var, values=["Forward", "Backward"])
+direction_dropdown.pack(pady=5)
 
 tk.Button(app, text="Process PDFs", command=process_pdfs).pack(pady=20)
 
