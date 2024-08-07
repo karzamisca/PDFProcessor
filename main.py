@@ -1,8 +1,8 @@
 import fitz  # PyMuPDF
 import os
 import re
-import tkinter as tk
-from tkinter import filedialog, simpledialog, messagebox, ttk
+from PyQt5 import QtWidgets, QtCore, QtGui
+
 
 def extract_images_from_pdf(pdf_path, output_folder):
     pdf_document = fitz.open(pdf_path)
@@ -16,25 +16,30 @@ def extract_images_from_pdf(pdf_path, output_folder):
             xref = img[0]
             base_image = pdf_document.extract_image(xref)
             image_bytes = base_image["image"]
-            image_filename = os.path.join(images_folder, f"page_{page_number+1}_image_{image_index+1}.png")
+            image_filename = os.path.join(images_folder, f"page_{page_number + 1}_image_{image_index + 1}.png")
             with open(image_filename, "wb") as image_file:
                 image_file.write(image_bytes)
     pdf_document.close()
+
 
 def split_sentences(text):
     sentence_endings = re.compile(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s')
     return sentence_endings.split(text)
 
+
 def extract_text_from_pdf(pdf_path, keyword, output_folder, num_sentences, direction):
     pdf_document = fitz.open(pdf_path)
     extracted_text = []
     sentences = []
-    
+    sentence_page_map = {}
+
     for page_number in range(len(pdf_document)):
         page = pdf_document.load_page(page_number)
         text = page.get_text()
-        sentences += split_sentences(text)
-    
+        page_sentences = split_sentences(text)
+        sentences.extend(page_sentences)
+        sentence_page_map.update({i: page_number + 1 for i, _ in enumerate(page_sentences, start=len(sentences) - len(page_sentences))})
+
     keyword_indices = [i for i, s in enumerate(sentences) if keyword.lower() in s.lower()]
 
     for index in keyword_indices:
@@ -43,7 +48,9 @@ def extract_text_from_pdf(pdf_path, keyword, output_folder, num_sentences, direc
         elif direction == "Backward":
             selected_sentences = sentences[max(0, index - num_sentences + 1):index + 1]
 
-        extracted_text.append(f"Keyword found in Sentence {index+1}:\n{' '.join(selected_sentences)}")
+        page_number = sentence_page_map.get(index, 1)
+
+        extracted_text.append(f"Keyword found on Page {page_number}, Sentence {index + 1}:\n{' '.join(selected_sentences)}")
 
     pdf_document.close()
 
@@ -52,30 +59,29 @@ def extract_text_from_pdf(pdf_path, keyword, output_folder, num_sentences, direc
         with open(text_filename, "w", encoding="utf-8") as text_file:
             text_file.write("\n\n".join(extracted_text))
 
+
 def sanitize_filename(title):
-    # Remove or replace invalid characters for filenames
     return "".join(c for c in title if c.isalnum() or c in (" ", "_", "-"))
+
 
 def divide_pdf_into_chapters(pdf_path, output_folder):
     pdf_document = fitz.open(pdf_path)
-    outline = pdf_document.get_toc()  # Get the table of contents
+    outline = pdf_document.get_toc()
 
     if not outline:
-        messagebox.showwarning("Outline Error", "No document outline found.")
+        QtWidgets.QMessageBox.warning(None, "Outline Error", "No document outline found.")
         return
 
-    # Filter out only top-level entries (level == 1)
     top_level_entries = [entry for entry in outline if entry[0] == 1]
 
     if not top_level_entries:
-        messagebox.showwarning("Outline Error", "No top-level outline entries found.")
+        QtWidgets.QMessageBox.warning(None, "Outline Error", "No top-level outline entries found.")
         return
 
     chapter_pages = {}
     for i, entry in enumerate(top_level_entries):
         level, title, page = entry
-        if page >= 0:  # Valid page number
-            # Sanitize title to be a valid filename
+        if page >= 0:
             sanitized_title = sanitize_filename(title)
             chapter_pages[page] = sanitized_title
 
@@ -83,132 +89,191 @@ def divide_pdf_into_chapters(pdf_path, output_folder):
 
     for i in range(len(sorted_pages)):
         start_page = sorted_pages[i]
-        end_page = sorted_pages[i+1] if i+1 < len(sorted_pages) else len(pdf_document)
-        
-        # Adjust start_page by subtracting 1 to include the correct range
+        end_page = sorted_pages[i + 1] if i + 1 < len(sorted_pages) else len(pdf_document)
+
         start_page_adjusted = start_page - 1
         end_page_adjusted = end_page
 
         chapter_title = chapter_pages[start_page]
-        chapter_pdf = fitz.open()  # New PDF
+        chapter_pdf = fitz.open()
 
         for page_number in range(start_page_adjusted, end_page_adjusted):
             chapter_pdf.insert_pdf(pdf_document, from_page=page_number, to_page=page_number)
 
-        # Ensure filename is unique and valid
         chapter_filename = os.path.join(output_folder, f"{chapter_title}.pdf")
-        # Truncate filename to avoid excessive length
         if len(chapter_filename) > 255:
             chapter_filename = chapter_filename[:255]
         try:
             chapter_pdf.save(chapter_filename)
         except Exception as e:
-            messagebox.showerror("Save Error", f"Failed to save chapter '{chapter_title}': {e}")
+            QtWidgets.QMessageBox.critical(None, "Save Error", f"Failed to save chapter '{chapter_title}': {e}")
         finally:
             chapter_pdf.close()
 
     pdf_document.close()
 
-def browse_input_folder():
-    folder_selected = filedialog.askdirectory()
-    input_folder_var.set(folder_selected)
 
-def browse_output_folder():
-    folder_selected = filedialog.askdirectory()
-    output_folder_var.set(folder_selected)
+class PDFProcessingApp(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.init_ui()
 
-def browse_input_file():
-    file_selected = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
-    input_file_var.set(file_selected)
+    def init_ui(self):
+        self.setWindowTitle("PDF Processing Tool")
+        self.setGeometry(100, 100, 600, 600)
 
-def process_pdfs():
-    input_folder = input_folder_var.get()
-    output_folder = output_folder_var.get()
-    input_file = input_file_var.get()
-    extract_text = text_var.get()
-    extract_images = image_var.get()
-    divide_chapters = chapter_var.get()
+        self.input_folder_var = QtWidgets.QLineEdit(self)
+        self.output_folder_var = QtWidgets.QLineEdit(self)
+        self.input_file_var = QtWidgets.QLineEdit(self)
+        self.text_var = QtWidgets.QCheckBox("Extract Text", self)
+        self.image_var = QtWidgets.QCheckBox("Extract Images", self)
+        self.chapter_var = QtWidgets.QCheckBox("Divide into Chapters", self)
+        self.direction_var = QtWidgets.QComboBox(self)
+        self.direction_var.addItems(["Forward", "Backward"])
+        self.num_sentences_var = QtWidgets.QSpinBox(self)
+        self.num_sentences_var.setMinimum(1)
+        self.num_sentences_var.setValue(5)
+        self.search_keyword_var = QtWidgets.QLineEdit(self)
+        self.search_results_var = QtWidgets.QTextEdit(self)
+        self.search_results_var.setReadOnly(True)
 
-    if not input_folder and not input_file:
-        messagebox.showwarning("Input Error", "Please select an input folder or file.")
-        return
+        input_folder_label = QtWidgets.QLabel("Input Folder:", self)
+        output_folder_label = QtWidgets.QLabel("Output Folder:", self)
+        input_file_label = QtWidgets.QLabel("Or Input File:", self)
+        direction_label = QtWidgets.QLabel("Search/Extract Text Direction:", self)
+        num_sentences_label = QtWidgets.QLabel("Number of Sentences:", self)
+        search_keyword_label = QtWidgets.QLabel("Search/Extract Keyword:", self)
 
-    if not output_folder:
-        messagebox.showwarning("Output Error", "Please select an output folder.")
-        return
+        browse_input_folder_btn = QtWidgets.QPushButton("Browse Folder", self)
+        browse_output_folder_btn = QtWidgets.QPushButton("Browse", self)
+        browse_input_file_btn = QtWidgets.QPushButton("Browse File", self)
+        process_btn = QtWidgets.QPushButton("Process PDFs", self)
+        search_btn = QtWidgets.QPushButton("Search Keyword", self)
 
-    if extract_text:
-        keyword = simpledialog.askstring("Keyword", "Enter the keyword to search:")
-        if not keyword:
-            messagebox.showwarning("Keyword Error", "Please enter a keyword for text extraction.")
+        browse_input_folder_btn.clicked.connect(self.browse_input_folder)
+        browse_output_folder_btn.clicked.connect(self.browse_output_folder)
+        browse_input_file_btn.clicked.connect(self.browse_input_file)
+        process_btn.clicked.connect(self.process_pdfs)
+        search_btn.clicked.connect(self.search_keyword)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(input_folder_label)
+        layout.addWidget(self.input_folder_var)
+        layout.addWidget(browse_input_folder_btn)
+        layout.addWidget(input_file_label)
+        layout.addWidget(self.input_file_var)
+        layout.addWidget(browse_input_file_btn)
+        layout.addWidget(output_folder_label)
+        layout.addWidget(self.output_folder_var)
+        layout.addWidget(browse_output_folder_btn)
+        layout.addWidget(self.text_var)
+        layout.addWidget(self.image_var)
+        layout.addWidget(self.chapter_var)
+        layout.addWidget(direction_label)
+        layout.addWidget(self.direction_var)
+        layout.addWidget(num_sentences_label)
+        layout.addWidget(self.num_sentences_var)
+        layout.addWidget(process_btn)
+        layout.addWidget(search_keyword_label)
+        layout.addWidget(self.search_keyword_var)
+        layout.addWidget(search_btn)
+        layout.addWidget(self.search_results_var)
+
+        self.setLayout(layout)
+
+    def browse_input_folder(self):
+        folder_selected = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Input Folder")
+        self.input_folder_var.setText(folder_selected)
+
+    def browse_output_folder(self):
+        folder_selected = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        self.output_folder_var.setText(folder_selected)
+
+    def browse_input_file(self):
+        file_selected = QtWidgets.QFileDialog.getOpenFileName(self, "Select Input File", filter="PDF files (*.pdf)")[0]
+        self.input_file_var.setText(file_selected)
+
+    def search_keyword(self):
+        input_file = self.input_file_var.text()
+        keyword = self.search_keyword_var.text()
+        num_sentences = self.num_sentences_var.value()
+        direction = self.direction_var.currentText()
+        if not input_file or not keyword:
+            QtWidgets.QMessageBox.warning(self, "Input Error", "Please select an input file and enter a keyword.")
             return
-        try:
-            num_sentences = simpledialog.askinteger("Number of Sentences", "Enter the number of sentences to extract:")
-        except ValueError:
-            messagebox.showwarning("Sentence Number Error", "Please enter a valid number of sentences.")
+        results = self.search_keyword_in_pdf(input_file, keyword, num_sentences, direction)
+        self.search_results_var.setPlainText(results)
+
+    def search_keyword_in_pdf(self, pdf_path, keyword, num_sentences, direction):
+        pdf_document = fitz.open(pdf_path)
+        results = []
+        sentences = []
+        sentence_page_map = {}
+
+        for page_number in range(len(pdf_document)):
+            page = pdf_document.load_page(page_number)
+            text = page.get_text()
+            page_sentences = split_sentences(text)
+            sentences.extend(page_sentences)
+            sentence_page_map.update({i: page_number + 1 for i, _ in enumerate(page_sentences, start=len(sentences) - len(page_sentences))})
+
+        keyword_indices = [i for i, s in enumerate(sentences) if keyword.lower() in s.lower()]
+
+        for index in keyword_indices:
+            if direction == "Forward":
+                selected_sentences = sentences[index:index + num_sentences]
+            elif direction == "Backward":
+                selected_sentences = sentences[max(0, index - num_sentences + 1):index + 1]
+
+            page_number = sentence_page_map.get(index, 1)
+            results.append(f"Keyword found on Page {page_number}, Sentence {index + 1}:\n{' '.join(selected_sentences)}")
+
+        pdf_document.close()
+        return "\n\n".join(results)
+
+    def process_pdfs(self):
+        input_folder = self.input_folder_var.text()
+        output_folder = self.output_folder_var.text()
+        input_file = self.input_file_var.text()
+        extract_text = self.text_var.isChecked()
+        extract_images = self.image_var.isChecked()
+        divide_chapters = self.chapter_var.isChecked()
+
+        if not input_folder and not input_file:
+            QtWidgets.QMessageBox.warning(self, "Input Error", "Please select either an input folder or an input file.")
             return
-        direction = direction_var.get()
-        if direction not in ["Forward", "Backward"]:
-            messagebox.showwarning("Direction Error", "Please select a valid direction from the dropdown.")
+        if not output_folder:
+            QtWidgets.QMessageBox.warning(self, "Output Error", "Please select an output folder.")
+            return
+        if not extract_text and not extract_images and not divide_chapters:
+            QtWidgets.QMessageBox.warning(self, "Selection Error", "Please select at least one processing option.")
             return
 
-    if not extract_text and not extract_images and not divide_chapters:
-        messagebox.showwarning("Selection Error", "Please select at least one option to extract.")
-        return
+        keyword = self.search_keyword_var.text()
+        num_sentences = self.num_sentences_var.value()
+        direction = self.direction_var.currentText()
 
-    pdf_files = []
-    if input_folder:
-        pdf_files = [os.path.join(input_folder, f) for f in os.listdir(input_folder) if f.lower().endswith('.pdf')]
-    if input_file:
-        pdf_files.append(input_file)
-    
-    for pdf_path in pdf_files:
-        pdf_output_folder = os.path.join(output_folder, os.path.splitext(os.path.basename(pdf_path))[0])
-        os.makedirs(pdf_output_folder, exist_ok=True)
-        
-        if extract_images:
-            extract_images_from_pdf(pdf_path, pdf_output_folder)
-        
-        if extract_text:
-            extract_text_from_pdf(pdf_path, keyword, pdf_output_folder, num_sentences, direction)
-        
-        if divide_chapters:
-            divide_pdf_into_chapters(pdf_path, pdf_output_folder)
-    
-    messagebox.showinfo("Success", "Processing completed.")
+        if input_file:
+            pdf_paths = [input_file]
+        else:
+            pdf_paths = [os.path.join(input_folder, f) for f in os.listdir(input_folder) if f.lower().endswith(".pdf")]
 
-# GUI setup
-app = tk.Tk()
-app.title("PDF Processing Tool")
+        for pdf_path in pdf_paths:
+            pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
+            pdf_output_folder = os.path.join(output_folder, pdf_name)
+            os.makedirs(pdf_output_folder, exist_ok=True)
+            if extract_text and keyword:
+                extract_text_from_pdf(pdf_path, keyword, pdf_output_folder, num_sentences, direction)
+            if extract_images:
+                extract_images_from_pdf(pdf_path, pdf_output_folder)
+            if divide_chapters:
+                divide_pdf_into_chapters(pdf_path, pdf_output_folder)
 
-input_folder_var = tk.StringVar()
-output_folder_var = tk.StringVar()
-input_file_var = tk.StringVar()
-text_var = tk.BooleanVar()
-image_var = tk.BooleanVar()
-chapter_var = tk.BooleanVar()
-direction_var = tk.StringVar(value="Forward")
+        QtWidgets.QMessageBox.information(self, "Processing Complete", "Processing has been completed successfully.")
 
-tk.Label(app, text="Input Folder:").pack(pady=5)
-tk.Entry(app, textvariable=input_folder_var, width=50).pack(pady=5)
-tk.Button(app, text="Browse Folder", command=browse_input_folder).pack(pady=5)
 
-tk.Label(app, text="Or Input File:").pack(pady=5)
-tk.Entry(app, textvariable=input_file_var, width=50).pack(pady=5)
-tk.Button(app, text="Browse File", command=browse_input_file).pack(pady=5)
-
-tk.Label(app, text="Output Folder:").pack(pady=5)
-tk.Entry(app, textvariable=output_folder_var, width=50).pack(pady=5)
-tk.Button(app, text="Browse", command=browse_output_folder).pack(pady=5)
-
-tk.Checkbutton(app, text="Extract Text", variable=text_var).pack(pady=5)
-tk.Checkbutton(app, text="Extract Images", variable=image_var).pack(pady=5)
-tk.Checkbutton(app, text="Divide into Chapters", variable=chapter_var).pack(pady=5)
-
-tk.Label(app, text="Extract Text Direction:").pack(pady=5)
-direction_dropdown = ttk.Combobox(app, textvariable=direction_var, values=["Forward", "Backward"])
-direction_dropdown.pack(pady=5)
-
-tk.Button(app, text="Process PDFs", command=process_pdfs).pack(pady=20)
-
-app.mainloop()
+if __name__ == "__main__":
+    app = QtWidgets.QApplication([])
+    window = PDFProcessingApp()
+    window.show()
+    app.exec_()
