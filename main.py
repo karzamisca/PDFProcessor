@@ -1,7 +1,7 @@
-import fitz  # PyMuPDF
-import os
-import re
-from PyQt5 import QtWidgets, QtCore, QtGui
+import fitz  # Also know as PyMuPDF, v1.24.10
+import os #Built-in for Python 3.12.6
+import re #Built-in for Python 3.12.6
+from PyQt5 import QtWidgets, QtCore, QtGui #v5.15.11 
 
 
 def extract_images_from_pdf(pdf_path, output_folder):
