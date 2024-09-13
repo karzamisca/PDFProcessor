@@ -173,9 +173,10 @@ class PDFProcessingApp(QtWidgets.QWidget):
         layout.addWidget(self.direction_var)
         layout.addWidget(num_sentences_label)
         layout.addWidget(self.num_sentences_var)
-        layout.addWidget(process_btn)
+  
         layout.addWidget(search_keyword_label)
         layout.addWidget(self.search_keyword_var)
+        layout.addWidget(process_btn)
         layout.addWidget(search_btn)
         layout.addWidget(self.search_results_var)
 
